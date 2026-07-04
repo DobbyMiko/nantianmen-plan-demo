@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>南天门计划 | AI 原生游戏 Demo</title>
+    <link rel="stylesheet" href="src/styles.css?v=ai-dialogue-3-20260704" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="space-deck" aria-label="舰桥主视窗">
+        <canvas id="spaceCanvas" aria-hidden="true"></canvas>
+
+        <header class="bridge-header">
+          <div class="brand-lockup">
+            <div class="mission-mark">NTM</div>
+            <div>
+              <h1>南天门计划</h1>
+              <p class="mission-subtitle">
+                探索舰「昆仑号」 · <span id="levelCode">关卡 01</span> ·
+                <strong id="levelName">月背回声</strong>
+                <span id="levelObjective">抵达月背 L2 中继站，修复失联信标并确认异常来源。</span>
+              </p>
+            </div>
+          </div>
+          <div class="mission-readouts">
+            <span id="alertPill" class="readout readout-green">GREEN</span>
+            <span id="tokenPill" class="readout">Tokens 0</span>
+            <span id="modePill" class="readout">LOCAL</span>
+          </div>
+        </header>
+
+        <div class="target-strip">
+          <div>
+            <span class="strip-label">关卡 / 阶段</span>
+            <strong id="levelValue">L1 月背回声</strong>
+            <span id="levelStatePill" class="readout readout-green">待点火</span>
+            <small id="levelRisk">风险：低</small>
+          </div>
+          <div>
+            <span class="strip-label">飞行状态</span>
+            <strong id="speedValue">航速：0.0 c-f</strong>
+            <small id="postureValue">姿态：冷启动</small>
+          </div>
+          <div>
+            <span class="strip-label">位置 / 目的地</span>
+            <strong id="locationValue">地月转移轨道</strong>
+            <strong id="targetValue">月背 L2 中继站</strong>
+            <small id="levelDestination">目的地：月背 L2 中继站</small>
+          </div>
+          <div>
+            <span class="strip-label">航程</span>
+            <strong id="progressValue">0%</strong>
+            <div class="journey-meter strip-meter" aria-label="关卡航程进度">
+              <div id="journeyProgressBar"></div>
+            </div>
+            <small id="levelEvents">事件：0/2 · 忽略：0</small>
+          </div>
+        </div>
+      </section>
+
+      <aside class="command-deck" aria-label="指挥台">
+        <nav class="tab-bar" aria-label="舰桥面板">
+          <button class="tab-button active" data-tab="command">指挥</button>
+          <button class="tab-button" data-tab="comms">通讯</button>
+          <button class="tab-button" data-tab="systems">系统</button>
+          <button class="tab-button" data-tab="source">能源设置</button>
+        </nav>
+
+        <section id="commandTab" class="tab-panel active">
+          <div class="event-dock" id="eventDock">
+            <div class="event-dock-header">
+              <span class="panel-kicker">事件队列</span>
+              <strong id="eventDockTitle">航段节奏</strong>
+            </div>
+            <div class="event-rail" id="eventRail" aria-label="事件队列"></div>
+            <div id="eventPanel" class="event-panel">
+              <span class="panel-kicker" id="eventCategory">随机事件</span>
+              <h3 id="eventTitle">航线稳定</h3>
+              <p id="eventText">当前航段没有危机。继续航行会推进关卡进度，并可能触发下一次随机事件。</p>
+              <div id="eventOptions" class="event-options"></div>
+            </div>
+            <div class="level-actions">
+              <button id="advanceButton" class="secondary-button" type="button">继续航行</button>
+              <button id="nextLevelButton" class="secondary-button" type="button" hidden>下一关</button>
+            </div>
+          </div>
+
+          <div class="interaction-panel group-chat-panel">
+            <div class="interaction-header">
+              <div>
+                <span class="panel-kicker" id="commandChannelKicker">舰桥群聊</span>
+                <h2 id="commandChannelTitle">昆仑号通讯频道</h2>
+              </div>
+              <button class="mini-tab-button" type="button" data-open-tab="comms">通讯记录</button>
+            </div>
+            <div class="channel-selector" id="channelSelector" aria-label="通讯频道">
+              <button class="channel-chip active" type="button" data-channel="all">全频道</button>
+              <button class="channel-chip" type="button" data-channel="lin">林澈</button>
+              <button class="channel-chip" type="button" data-channel="ailan">艾岚</button>
+              <button class="channel-chip" type="button" data-channel="heyi">何弈</button>
+              <button class="channel-chip" type="button" data-channel="qin">秦昭</button>
+            </div>
+            <div id="commandCommsPreview" class="crew-preview chat-thread" aria-live="polite"></div>
+            <form id="commandForm" class="command-form chat-composer">
+              <label for="commandInput">舰长发言</label>
+              <textarea id="commandInput" rows="2" autocomplete="off" spellcheck="false">继续航行，保持关卡航线，并让导航官艾岚监控偏航。</textarea>
+              <div class="quick-row" aria-label="快速指令">
+                <button type="button" class="quick-command" data-command="继续航行，保持关卡航线，并让导航官艾岚监控偏航。">继续航行</button>
+                <button type="button" class="quick-command" data-command="呼叫相关船员汇报情况，先安抚船员再处理风险。">船员沟通</button>
+                <button type="button" class="quick-command" data-command="开启护盾，把能源转给扫描阵列，发射无人探针侦察未知源。">危机处理</button>
+              </div>
+              <button id="executeButton" class="primary-button" type="submit">发送至舰桥</button>
+            </form>
+          </div>
+        </section>
+
+        <section id="commsTab" class="tab-panel">
+          <div id="npcList" class="npc-list"></div>
+          <div class="conversation-panel">
+            <div class="conversation-header">
+              <span class="panel-kicker">舰长与舰员互动</span>
+              <h2>舰桥通讯记录</h2>
+            </div>
+            <div class="comms-transcript" id="commsTranscript" aria-live="polite"></div>
+          </div>
+        </section>
+
+        <section id="systemsTab" class="tab-panel">
+          <div class="system-grid" id="systemGrid"></div>
+          <div class="level-list" id="levelList"></div>
+          <div class="mission-brief">
+            <span class="panel-kicker">任务态势</span>
+            <p id="missionText">昆仑号正在执行关卡化深空任务。每一关都有明确目的地，航程中会触发船员、舰船或未知宇宙事件。</p>
+          </div>
+          <section class="log-panel" aria-label="航行日志">
+            <div class="log-panel-header">
+              <span class="panel-kicker">航行日志</span>
+              <h2>系统回放</h2>
+            </div>
+            <div id="logList" class="log-list" aria-live="polite"></div>
+          </section>
+        </section>
+
+        <section id="sourceTab" class="tab-panel">
+          <div class="energy-settings-panel">
+            <div class="energy-panel-head">
+              <span class="panel-kicker">能源设置</span>
+              <h2>AI 算力链路</h2>
+            </div>
+            <div class="settings-grid energy-settings-grid">
+              <label class="toggle-line">
+                <input id="aiToggle" type="checkbox" />
+                <span>AI 解析 / 角色演出</span>
+              </label>
+              <label>
+                <span>OpenRouter API Key</span>
+                <input id="apiKeyInput" type="password" autocomplete="off" placeholder="sk-or-..." />
+              </label>
+              <label>
+                <span>model_id</span>
+                <input id="modelInput" type="text" autocomplete="off" />
+              </label>
+              <label class="toggle-line">
+                <input id="rememberKeyToggle" type="checkbox" />
+                <span>本机记住 key</span>
+              </label>
+              <button id="saveSettingsButton" class="secondary-button" type="button">保存设置</button>
+            </div>
+            <div class="debug-analysis-panel">
+              <span class="panel-kicker">调试反馈</span>
+              <p id="analysisText">本地解析待命。</p>
+            </div>
+          </div>
+        </section>
+      </aside>
+    </main>
+
+    <script type="module" src="src/main.js?v=ai-dialogue-3-20260704"></script>
+  </body>
+</html>
