@@ -1629,6 +1629,7 @@ function maybeTriggerPhaseEvent() {
 function maybeTriggerLevelEvent() {
   const level = currentLevel();
   if (game.level.activeEvent || game.level.complete) return false;
+  if (game.level.eventsResolved >= level.requiredEvents) return false;
   const milestoneIndex = level.eventMilestones.findIndex((milestone, index) => {
     return game.level.progress >= milestone && !game.level.eventsSeen.includes(`milestone-${index}`);
   });
@@ -2064,7 +2065,8 @@ function renderLevel() {
   elements.levelObjective.textContent = level.objective;
   elements.journeyProgressBar.style.width = `${clamp(game.level.progress, 0, 100)}%`;
   elements.levelDestination.textContent = `目的地：${level.destination}`;
-  elements.levelEvents.textContent = `事件：${game.level.eventsResolved}/${level.requiredEvents} · 忽略：${game.level.ignoredEvents}`;
+  const resolvedEvents = Math.min(game.level.eventsResolved, level.requiredEvents);
+  elements.levelEvents.textContent = `事件：${resolvedEvents}/${level.requiredEvents} · 忽略：${game.level.ignoredEvents}`;
   elements.levelRisk.textContent = `风险：${level.risk}`;
   elements.nextLevelButton.hidden = !game.level.complete || game.level.campaignComplete;
   elements.advanceButton.disabled = Boolean(activeEvent) || game.level.complete || game.level.campaignComplete;
