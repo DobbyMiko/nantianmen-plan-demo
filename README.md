@@ -33,18 +33,19 @@ http://127.0.0.1:5177/
 ## AI / BYOK
 
 - 支持 BYOK：在界面里填入自己的 OpenRouter API Key。
-- API 地址：`https://openrouter.ai/api/v1/chat/completions`
+- 请求接口：`POST https://openrouter.ai/api/v1/chat/completions`
+- 这个接口是给程序请求用的，不是浏览器页面；直接在浏览器里打开可能会显示错误或空响应。
 - 默认 `model_id`：`openai/gpt-4.1-mini`
 - 可在界面中改成其他 OpenRouter model slug。
 - token 用量会在舰桥右上角累计显示。
 - 勾选“本机记住 key”才会把 key 写入 `localStorage`，否则只写入 `sessionStorage`。
 - AI 请求会带上当前关卡、航程、已触发事件和 activeEvent，让模型优先解析“如何解决当前事件”。
 
-没有 key 时，demo 会使用本地规则解析器兜底，方便直接试玩和看源码。
+没有 key 时，demo 会使用本地规则解析器兜底，方便直接试玩和查看代码。
 
-## 源码
+## 文件结构
 
-源码在这些文件中，也可以在游戏内“源码”页直接查看：
+主要代码在这些文件中：
 
 - `index.html`
 - `src/styles.css`
