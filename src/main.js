@@ -1,5 +1,8 @@
-const DEFAULT_MODEL_ID = "qwen/qwen3.7-plus";
+const DEFAULT_MODEL_ID = "openai/gpt-4.1-mini";
 const OPENROUTER_ENDPOINT = "https://openrouter.ai/api/v1/chat/completions";
+const OPENROUTER_REQUEST_TIMEOUT_MS = 5000;
+const OPENROUTER_TOTAL_TIMEOUT_MS = 8000;
+const OPENROUTER_DIALOGUE_TIMEOUT_MS = 5000;
 const OPENROUTER_FALLBACK_MODELS = [
   DEFAULT_MODEL_ID,
   "qwen/qwen3.5-plus-20260420",
@@ -127,7 +130,7 @@ const EVENT_DECK = {
     npc: "qin",
     risk: "yellow",
     stage: "launch",
-    countsForLevel: false,
+    countsForLevel: true,
     text: "安保官秦昭报告：舰长，我们在船舱发现了一只猴子，它正沿维护管线往扫描阵列方向移动，该怎么办？",
     options: [
       "命令秦昭封锁货舱，何弈扫描生命体来源，林澈保护维护管线。",
@@ -727,9 +730,15 @@ async function runCommand(rawCommand) {
   try {
     if (game.settings.aiEnabled && game.settings.apiKey) {
       try {
-        intent = await parseWithOpenRouter(command);
-        mode = "AI";
-        applyTokenUsage(intent.usage);
+        const aiIntent = await withTimeout(
+          parseWithOpenRouter(command),
+          OPENROUTER_TOTAL_TIMEOUT_MS + 1000,
+          "OpenRouter 解析超时",
+        );
+        applyTokenUsage(aiIntent.usage);
+        const playableIntent = preferExecutableIntent(aiIntent, command);
+        intent = playableIntent.intent;
+        mode = playableIntent.mode;
       } catch (error) {
         console.error(error);
         appendLog("系统", `OpenRouter 调用失败：${readableError(error)}。`);
@@ -856,27 +865,42 @@ function openRouterHeaders() {
   return headers;
 }
 
-async function callOpenRouterJson({ systemPrompt, payload, temperature = 0.35, maxTokens = 700 }) {
+async function callOpenRouterJson({
+  systemPrompt,
+  payload,
+  temperature = 0.35,
+  maxTokens = 700,
+  requestTimeoutMs = OPENROUTER_REQUEST_TIMEOUT_MS,
+  totalTimeoutMs = OPENROUTER_TOTAL_TIMEOUT_MS,
+}) {
   const preferredModel = game.settings.modelId || DEFAULT_MODEL_ID;
   const models = [...new Set([preferredModel, ...OPENROUTER_FALLBACK_MODELS])];
   let lastError = null;
+  const startedAt = Date.now();
 
   for (const model of models) {
+    const remainingMs = totalTimeoutMs - (Date.now() - startedAt);
+    if (remainingMs <= 0) break;
+
     try {
-      const response = await fetch(OPENROUTER_ENDPOINT, {
-        method: "POST",
-        headers: openRouterHeaders(),
-        body: JSON.stringify({
-          model,
-          messages: [
-            { role: "system", content: systemPrompt },
-            { role: "user", content: JSON.stringify(payload) },
-          ],
-          temperature,
-          max_tokens: maxTokens,
-          response_format: { type: "json_object" },
-        }),
-      });
+      const response = await fetchWithTimeout(
+        OPENROUTER_ENDPOINT,
+        {
+          method: "POST",
+          headers: openRouterHeaders(),
+          body: JSON.stringify({
+            model,
+            messages: [
+              { role: "system", content: systemPrompt },
+              { role: "user", content: JSON.stringify(payload) },
+            ],
+            temperature,
+            max_tokens: maxTokens,
+            response_format: { type: "json_object" },
+          }),
+        },
+        Math.min(requestTimeoutMs, remainingMs),
+      );
 
       const text = await response.text();
       if (!response.ok) {
@@ -897,7 +921,34 @@ async function callOpenRouterJson({ systemPrompt, payload, temperature = 0.35, m
     }
   }
 
-  throw lastError || new Error("OpenRouter 没有返回可用结果");
+  throw lastError || new Error("OpenRouter 请求超时或没有返回可用结果");
+}
+
+async function fetchWithTimeout(url, options, timeoutMs) {
+  const controller = new AbortController();
+  const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } catch (error) {
+    if (error?.name === "AbortError") {
+      throw new Error(`OpenRouter 请求超时（${Math.ceil(timeoutMs / 1000)} 秒）`);
+    }
+    throw error;
+  } finally {
+    window.clearTimeout(timeoutId);
+  }
+}
+
+function withTimeout(promise, timeoutMs, message) {
+  let timeoutId = null;
+  const timeout = new Promise((_, reject) => {
+    timeoutId = window.setTimeout(() => reject(new Error(message)), timeoutMs);
+  });
+
+  return Promise.race([promise, timeout]).finally(() => {
+    if (timeoutId !== null) window.clearTimeout(timeoutId);
+  });
 }
 
 function parseModelJson(content) {
@@ -928,6 +979,25 @@ function normalizeIntent(raw, command) {
     logs: normalizeStringArray(raw.logs),
     missionText: asText(raw.missionText || raw.mission || ""),
   };
+}
+
+function preferExecutableIntent(aiIntent, command) {
+  if (hasExecutableAction(aiIntent)) {
+    return { intent: aiIntent, mode: "AI" };
+  }
+
+  const localIntent = parseLocally(command);
+  if (!hasExecutableAction(localIntent)) {
+    return { intent: aiIntent, mode: "AI" };
+  }
+
+  localIntent.summary = `AI 未返回可执行动作，已转入本地解析。${localIntent.summary}`;
+  localIntent.skipDialoguePolish = true;
+  return { intent: localIntent, mode: "LOCAL" };
+}
+
+function hasExecutableAction(intent) {
+  return Boolean(intent?.actions?.some((action) => action.type && action.type !== "unknown"));
 }
 
 function normalizeAction(action) {
@@ -1122,7 +1192,11 @@ async function polishNewCrewReplies(command, newCrewReplies, intent, mode) {
 
   try {
     elements.executeButton.textContent = "生成通讯中";
-    const result = await generateNpcDialogueWithOpenRouter(command, entries, intent, mode);
+    const result = await withTimeout(
+      generateNpcDialogueWithOpenRouter(command, entries, intent, mode),
+      OPENROUTER_DIALOGUE_TIMEOUT_MS,
+      "角色演出生成超时",
+    );
     applyTokenUsage(result.usage);
     return applyPolishedReplies(result.replies, entries);
   } catch (error) {
@@ -1200,6 +1274,7 @@ async function generateNpcDialogueWithOpenRouter(command, entries, intent, mode)
     payload,
     temperature: 0.78,
     maxTokens: 700,
+    totalTimeoutMs: OPENROUTER_DIALOGUE_TIMEOUT_MS,
   });
 
   return {
@@ -1252,6 +1327,7 @@ function handleMonkeyFollowUp(command) {
   const text = String(command || "");
   const activeEvent = game.level.activeEvent;
   const activeIsMonkey = activeEvent?.id === "cabin-monkey";
+  const activeEventDef = activeIsMonkey ? EVENT_DECK[activeEvent.id] : null;
   const monkeyThread = game.level.unresolvedThreads.find(
     (thread) => thread.id === "loose-monkey" && !thread.resolved,
   );
@@ -1263,7 +1339,7 @@ function handleMonkeyFollowUp(command) {
 
   appendComms("qin", "收到，舰长。安保组封锁货舱并设置软隔离网，我会把猴子从维护管线旁诱导到隔离箱。");
   appendComms("lin", "维修组开始复位扫描阵列维护束线，后续我会把管线口加一道防护闸。");
-  appendLog("补救处置", "安保组隔离货舱猴子，维修组复位扫描阵列维护束线。");
+  appendLog(activeIsMonkey ? "事件解决" : "补救处置", "安保组隔离货舱猴子，维修组复位扫描阵列维护束线。");
   applyStatEffects({ scanner: 6, morale: 2, energy: -1 });
 
   if (monkeyThread) {
@@ -1272,6 +1348,9 @@ function handleMonkeyFollowUp(command) {
   }
 
   if (activeIsMonkey) {
+    if (activeEventDef?.countsForLevel !== false) {
+      game.level.eventsResolved += 1;
+    }
     game.level.activeEvent = null;
     game.mission.phase = "cruise";
     game.ui.selectedEventTab = "phase";
