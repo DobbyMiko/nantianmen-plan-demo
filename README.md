@@ -59,14 +59,14 @@ http://127.0.0.1:5177/
 
 没有 key 时，demo 会使用本地规则解析器兜底，方便直接试玩和查看代码。
 
-## 文件结构
+## 源码
 
-主要代码在这些文件中：
+源码在本仓库中可直接查看，主要文件如下：
 
-- `index.html`
-- `src/styles.css`
-- `src/main.js`
-- `README.md`
+- [index.html](index.html)
+- [src/styles.css](src/styles.css)
+- [src/main.js](src/main.js)
+- [README.md](README.md)
 
 核心流程：
 
